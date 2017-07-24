@@ -1,0 +1,83 @@
+---
+title: "machine learning project"
+author: "Victor Dong"
+date: "2017年7月23日"
+output: pdf_document
+---
+## Basic Processing
+First library the package 
+```{r}
+library(caret)
+```
+
+Then we need to acquire the data, what needs to be mentioned is the data source http://groupware.les.inf.puc-rio.br/har, here I would like to thank for the generosity to use the data. 
+```{r eval = FALSE}
+data_train <- download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+"C:/datascientist/machine learning/datatrain.csv")
+data_test <- download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+                           "C:/datascientist/machine learning/datatest.csv")
+```
+
+```{r}
+data_train  <- read.table("./datatrain.csv",sep=",",na.strings = c("NA",""),header=TRUE)
+data_test <- read.table("./datatest.csv",sep=",",na.strings = c("NA",""),header=TRUE)
+# here we seperate the train model
+inTrain <- createDataPartition(data_train$classe, p=0.70, list=FALSE)
+training <- data_train[inTrain,]
+validation <- data_train[-inTrain,]
+# remove the column with only NA
+training<-training[,colSums(is.na(training)) == 0]
+classe<-training$classe
+nums <- sapply(training, is.numeric)
+training<-cbind(classe,training[,nums])
+training$X<-training$num_window<-NULL
+
+validation<-validation[,colSums(is.na(validation)) == 0]
+vclasse<-validation$classe
+vnums <- sapply(validation, is.numeric)
+validation<-cbind(vclasse,validation[,vnums])
+colnames(validation)[1]<-"classe"
+validation$X<-validation$num_window<-NULL
+# the same process applied to test data
+testing<-data_test[,colSums(is.na(data_test)) == 0]
+testing$X<-testing$num_window<-NULL
+```
+
+### Model building
+Fit a model using random forest, running in parallel with 8 processes on the training of the model took about 20 minutes.
+```{r}
+library(doSNOW)
+cl <- makeCluster(8, type="SOCK")
+registerDoSNOW(cl)
+fit <- train(classe~.,data=training, method="rf")
+save(fit,file="fit.RData")
+load(file = "./fit.RData")
+fit$results
+```
+
+### Error estimation with cross validation
+
+Using the model that we've trained, we're performing a cross validation with the rest of data from the dataset reserved for this reason. The out of error rate is expected to be less than 1%, as the accuracy of the model observed above is 99.7%.
+```{r}
+traincontrol <- trainControl(method = "cv", number = 5)
+```
+
+```{r}
+fit_crossvalidation <- train(classe~.,data=validation, method="rf",trControl=traincontrol)
+fit_crossvalidation$resample
+fit_crossvalidation$results
+confusionMatrix(predict(fit_crossvalidation, newdata=validation), validation$classe)
+```
+
+Indeed, by calculating the out of sample error (the cross-validation estimate is an out-of-sample estimate) we get the value of `1.02%`:
+```{r}
+fit_crossvalidation$finalModel
+```
+
+### Predict the 20 test cases
+
+Finally, to predict the classe of the testing dataset, we're applying the prediction using the model we've trained and output the results in the respective files as adviced by the instructor:
+```{r}
+test_prediction<-predict(fit, newdata=testing)
+test_prediction
+```
